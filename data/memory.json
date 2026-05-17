@@ -1,0 +1,19 @@
+{
+  "profiles": {
+    "Madhuri": {
+      "name": "Madhuri",
+      "monthly_salary": 80000.0,
+      "expenses": {
+        "housing": 25000.0,
+        "food": 12000.0,
+        "transport": 6000.0,
+        "utilities": 4000.0,
+        "entertainment": 8000.0,
+        "miscellaneous": 5000.0
+      },
+      "created_at": "2026-05-15T15:15:43.769102",
+      "updated_at": "2026-05-15T15:15:43.769102"
+    }
+  },
+  "history": {}
+}
