@@ -12,27 +12,21 @@ from agent.models import SalaryInput, SavingsPlan, UserProfile
 import agent.database as db
 import os
 
-
 # ── Agent instances ──────────────────────────────────────────
 agent  = FinancialAgent()
 agent2 = ExecutionAgent()
 agent3 = SchedulerAgent(planner=agent, executor=agent2)
 
-# ── APScheduler ──────────────────────────────────────────────
+# ── Scheduler ────────────────────────────────────────────────
 scheduler = AsyncIOScheduler()
 
-
 async def scheduled_run():
-    """Called automatically by APScheduler on the 1st of every month."""
     print("[SCHEDULER] [INFO ] timer fired — starting monthly run")
     agent3.run()
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db.init_db()
-
-    # 1st of every month at 8:00am
     scheduler.add_job(
         scheduled_run,
         trigger=CronTrigger(day=1, hour=8, minute=0),
@@ -41,11 +35,8 @@ async def lifespan(app: FastAPI):
     )
     scheduler.start()
     print("[SCHEDULER] [INFO ] timer armed — runs on 1st of every month at 08:00")
-
     yield
-
     scheduler.shutdown()
-
 
 app = FastAPI(
     title="Financial Planning Agent",
@@ -54,6 +45,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# ── API Router ───────────────────────────────────────────────
 api = APIRouter(prefix="/api")
 
 @api.get("/status")
@@ -90,12 +82,10 @@ def analyze_by_name(name: str, background_tasks: BackgroundTasks):
         raise HTTPException(404, f"No profile found for '{name}'.")
     if agent.state.value != "IDLE":
         raise HTTPException(409, f"Agent busy — state: {agent.state.value}")
-
     history  = db.get_history(name)
     last_run = history[-1] if history else None
     trend    = db.get_trend(name)
     context  = {"last_run": last_run, "trend": trend} if last_run or trend else None
-
     input_data = SalaryInput(
         name           = profile["name"],
         monthly_salary = profile["monthly_salary"],
@@ -178,10 +168,7 @@ def run_scheduler():
 def scheduler_status():
     job      = scheduler.get_job("monthly_run")
     next_run = str(job.next_run_time) if job else "not scheduled"
-    return {
-        **agent3.get_status(),
-        "next_scheduled_run": next_run,
-    }
+    return {**agent3.get_status(), "next_scheduled_run": next_run}
 
 @api.get("/scheduler/runs")
 def get_scheduler_runs():
@@ -218,23 +205,31 @@ def get_plan():
         raise HTTPException(404, "No plan yet — call /analyze first")
     return agent.plan
 
-# register the router
 app.include_router(api)
 
 # ── Serve React frontend ─────────────────────────────────────
-frontend_dist = os.path.join(os.path.dirname(__file__), "frontend", "dist")
+BASE_DIR      = os.path.dirname(os.path.abspath(__file__))
+frontend_dist = os.path.join(BASE_DIR, "frontend", "dist")
+index_html    = os.path.join(frontend_dist, "index.html")
 
-if os.path.exists(frontend_dist):
-    app.mount(
-        "/assets",
-        StaticFiles(directory=os.path.join(frontend_dist, "assets")),
-        name="assets"
-    )
+print(f"[FRONTEND ] BASE_DIR: {BASE_DIR}")
+print(f"[FRONTEND ] dist path: {frontend_dist}")
+print(f"[FRONTEND ] dist exists: {os.path.exists(frontend_dist)}")
+print(f"[FRONTEND ] index exists: {os.path.exists(index_html)}")
 
-    @app.get("/{full_path:path}")
-    def serve_frontend(full_path: str):
-        return FileResponse(os.path.join(frontend_dist, "index.html"))
+assets_dir = os.path.join(frontend_dist, "assets")
+if os.path.exists(assets_dir):
+    app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+    print(f"[FRONTEND ] assets mounted from {assets_dir}")
 
-    @app.get("/")
-    def serve_root():
-        return FileResponse(os.path.join(frontend_dist, "index.html"))
+@app.get("/")
+def serve_root():
+    if os.path.exists(index_html):
+        return FileResponse(index_html)
+    return {"status": "api running", "frontend": "not found", "path": frontend_dist}
+
+@app.get("/{full_path:path}")
+def serve_frontend(full_path: str):
+    if os.path.exists(index_html):
+        return FileResponse(index_html)
+    return {"status": "api running", "frontend": "not found", "path": frontend_dist}
