@@ -5,40 +5,48 @@ import requests
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
+import os
+import json
+from dotenv import load_dotenv
+from mailjet_rest import Client
 
 load_dotenv()
 
-GMAIL_ADDRESS    = os.getenv("GMAIL_ADDRESS")
-GMAIL_PASSWORD   = os.getenv("GMAIL_APP_PASSWORD")
+MAILJET_API_KEY    = os.getenv("MAILJET_API_KEY")
+MAILJET_SECRET_KEY = os.getenv("MAILJET_SECRET_KEY")
+SENDER_EMAIL       = os.getenv("GMAIL_ADDRESS")
 SLACK_WEBHOOK    = os.getenv("SLACK_WEBHOOK_URL")
 
 
 # ── Email ────────────────────────────────────────────────────
 def send_email(to: str, subject: str, body: str) -> bool:
-    """
-    Send a plain text email via Gmail SMTP.
-    Returns True on success, False on failure.
-    Never raises — failure is logged, not crashed.
-    """
     if not to:
         print("[NOTIFIER ] [WARN ] no recipient email — skipping")
         return False
-    if not GMAIL_ADDRESS or not GMAIL_PASSWORD:
-        print("[NOTIFIER ] [WARN ] Gmail credentials missing in .env")
+    if not MAILJET_API_KEY or not MAILJET_SECRET_KEY:
+        print("[NOTIFIER ] [WARN ] Mailjet credentials missing")
         return False
 
     try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"]    = GMAIL_ADDRESS
-        msg["To"]      = to
-        msg.attach(MIMEText(body, "plain"))
-
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(GMAIL_ADDRESS, GMAIL_PASSWORD)
-            server.sendmail(GMAIL_ADDRESS, to, msg.as_string())
-
-        print(f"[NOTIFIER ] [INFO ] email sent → {to}")
+        mailjet = Client(
+            auth=(MAILJET_API_KEY, MAILJET_SECRET_KEY),
+            version='v3.1'
+        )
+        data = {
+            'Messages': [{
+                "From": {
+                    "Email": SENDER_EMAIL,
+                    "Name":  "Financial Agent"
+                },
+                "To": [{
+                    "Email": to
+                }],
+                "Subject":  subject,
+                "TextPart": body,
+            }]
+        }
+        result = mailjet.send.create(data=data)
+        print(f"[NOTIFIER ] [INFO ] email sent → {to} (status {result.status_code})")
         return True
 
     except Exception as e:
